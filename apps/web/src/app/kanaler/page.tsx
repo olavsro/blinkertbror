@@ -9,8 +9,9 @@ import Link from "next/link";
 import { formatDistanceish } from "@/lib/format";
 import { inboundAddress } from "@qbikk/core/config";
 import { listChannels } from "@qbikk/ingestion";
-import { checkChannelHealth, syncChannelNow, toggleChannel } from "@/lib/actions";
+import { checkChannelHealth, reopenOnboarding, syncChannelNow, toggleChannel } from "@/lib/actions";
 import { currentUser, listChannelRows } from "@/lib/data";
+import { loadOnboardingStatus } from "@/lib/onboarding";
 import { formFor } from "@/lib/channel-forms";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ export default async function ChannelsPage() {
   if (!user) return <p className="lede">Ingen bruker. Kjør `pnpm seed`.</p>;
 
   const rows = await listChannelRows(user.id);
+  const onboarding = await loadOnboardingStatus(user);
   const available = listChannels();
   const configured = new Set(rows.map((r) => r.type));
 
@@ -123,6 +125,18 @@ export default async function ChannelsPage() {
           <button type="button">Last opp en fil</button>
         </Link>
       </div>
+
+      {onboarding.finished ? (
+        <div className="panel">
+          <strong>Usikker på hvor du skal begynne?</strong>
+          <div className="small muted" style={{ margin: "4px 0 8px" }}>
+            Den korte innføringen tar to minutter og forklarer alt uten fagord.
+          </div>
+          <form action={reopenOnboarding}>
+            <button type="submit">Åpne «Kom i gang» igjen</button>
+          </form>
+        </div>
+      ) : null}
 
       <h2>Kan legges til</h2>
       <p className="small muted" style={{ marginTop: -6 }}>
