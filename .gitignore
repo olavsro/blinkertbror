@@ -14,3 +14,4 @@ dist/
 # aldri havne i git.
 storage/
 **/storage/
+.gstack/

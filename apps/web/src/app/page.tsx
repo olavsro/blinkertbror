@@ -6,8 +6,10 @@
  * laster øyeblikkelig.
  */
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { formatPlain } from "@qbikk/core/money";
 import { currentUser, loadDashboard, countActionItems } from "@/lib/data";
+import { loadOnboardingStatus, shouldShowWizard } from "@/lib/onboarding";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,11 @@ export default async function DashboardPage({
 }) {
   const user = await currentUser();
   if (!user) return <NoUser />;
+
+  // En tom oversikt er ingen hjelp for noen. Har brukeren ikke kommet i gang
+  // ennå, er veiviseren det eneste riktige å vise dem.
+  const onboarding = await loadOnboardingStatus(user);
+  if (shouldShowWizard(onboarding)) redirect("/kom-i-gang");
 
   const params = await searchParams;
   const year = Number(params.ar) || new Date().getFullYear();

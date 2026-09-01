@@ -9,7 +9,7 @@
  * gått utenom revisjonssporet uten at noen merket det før om fem år.
  */
 import { revalidatePath } from "next/cache";
-import { and, eq, getDb, ingestionChannels } from "@qbikk/db";
+import { and, eq, getDb, ingestionChannels, users } from "@qbikk/db";
 import {
   applyCorrection,
   mergeMatched,
@@ -255,4 +255,91 @@ export async function toggleChannel(formData: FormData): Action {
 
   revalidatePath("/kanaler");
   return setFlash({ ok: true, message: paused ? "Kanalen er satt på pause." : "Kanalen er aktiv igjen." });
+}
+
+/* ------------------------------------------------------------ kom i gang -- */
+
+/**
+ * Lagrer hva slags arbeid brukeren gjør.
+ *
+ * Valget styrer BARE hvilke kategorier og kontoer som foreslås - ikke hvilke
+ * kilder som finnes, og ikke hvordan noe leses. En DJ og en frisør går
+ * gjennom nøyaktig samme maskineri. Derfor er det trygt å bytte når som helst.
+ */
+export async function chooseTrade(formData: FormData): Action {
+  const user = await requireUser();
+  const trade = String(formData.get("trade") ?? "");
+  if (!trade) return setFlash({ ok: false, message: "Velg ett av alternativene." });
+
+  await getDb().update(users).set({ profile: trade }).where(eq(users.id, user.id));
+
+  // Profilen bestemmer hvilke leverandørforslag som gir mening, så de legges
+  // inn på nytt når valget endres. Eksisterende regler røres ikke.
+  await seedProfileRules(user.id, trade);
+
+  revalidatePath("/kom-i-gang");
+  revalidatePath("/");
+  return setFlash({ ok: true, message: "Lagret. Vi har satt opp kategoriene som passer deg." });
+}
+
+/** Brukeren sier seg ferdig med oppstarten. */
+export async function finishOnboarding(): Action {
+  const user = await requireUser();
+  await getDb().update(users).set({ onboardingCompletedAt: new Date() }).where(eq(users.id, user.id));
+
+  revalidatePath("/", "layout");
+  return setFlash({ ok: true, message: "Da er du i gang. Alt som kommer inn dukker opp under «Bilag»." });
+}
+
+/** Angrer man, skal veiviseren komme tilbake. */
+export async function reopenOnboarding(): Action {
+  const user = await requireUser();
+  await getDb().update(users).set({ onboardingCompletedAt: null }).where(eq(users.id, user.id));
+
+  revalidatePath("/", "layout");
+  return setFlash({ ok: true, message: "Veiviseren er åpen igjen." });
+}
+
+/**
+ * Legger inn leverandørforslagene fra bransjen som kategoriregler.
+ *
+ * Samme logikk som `scripts/seed.ts`, men her fordi brukeren kan bytte bransje
+ * etter at kontoen er opprettet. Hopper over det som allerede finnes, slik at
+ * brukerens egne rettinger aldri overskrives.
+ */
+async function seedProfileRules(userId: string, tradeKey: string): Promise<void> {
+  const { getProfile } = await import("@qbikk/core/profiles/index");
+  const { categoryByKey } = await import("@qbikk/core/profiles/types");
+  const { categoryRules } = await import("@qbikk/db");
+
+  const db = getDb();
+  const profile = getProfile(tradeKey);
+
+  const existing = await db
+    .select({ matchValue: categoryRules.matchValue, direction: categoryRules.direction })
+    .from(categoryRules)
+    .where(and(eq(categoryRules.userId, userId), eq(categoryRules.origin, "profile")));
+  const seen = new Set(existing.map((r) => `${r.matchValue}|${r.direction}`));
+
+  const rows = [];
+  for (const hint of profile.vendors) {
+    for (const direction of ["expense", "income"] as const) {
+      const key = direction === "expense" ? hint.expenseCategory : hint.incomeCategory;
+      if (!key || seen.has(`${hint.match}|${direction}`)) continue;
+      const category = categoryByKey(profile, key);
+      rows.push({
+        userId,
+        priority: 100,
+        matchType: hint.matchType,
+        matchValue: hint.match,
+        direction,
+        setCategory: key,
+        setAccountCode: category?.accountCode ?? null,
+        setVatCode: category?.defaultVatCode ?? null,
+        origin: "profile" as const,
+      });
+    }
+  }
+
+  if (rows.length > 0) await db.insert(categoryRules).values(rows);
 }

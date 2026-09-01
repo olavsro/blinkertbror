@@ -94,3 +94,97 @@ button.primary:hover { background: #17493a; }
 .notice { background: var(--warn-bg); border: 1px solid #fcd34d; color: var(--warn); padding: 10px 14px; border-radius: var(--radius); margin-bottom: 16px; }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
 .filters label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+/* ─────────────────────────────────────────────────── Kom i gang (veiviser)
+   Egen, luftigere rytme enn resten av appen. Der er tetthet en fordel - man
+   skanner tall i en kolonne. Her leser man, én ting av gangen, og da er luft
+   det som gjør det tydelig hva som er neste steg. */
+
+.progress {
+  list-style: none; display: flex; gap: 0; padding: 0; margin: 0 0 26px;
+  counter-reset: step;
+}
+.progress li { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; }
+.progress li::before {
+  content: ""; position: absolute; top: 13px; left: -50%; width: 100%; height: 2px;
+  background: var(--border);
+}
+.progress li:first-child::before { display: none; }
+.progress li.done::before, .progress li.active::before { background: var(--accent); }
+.progress .dot {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: #fff; border: 2px solid var(--border); font-size: 12px; font-weight: 600;
+  position: relative; z-index: 1;
+}
+.progress li.done .dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.progress li.active .dot { border-color: var(--accent); color: var(--accent); }
+.progress .label { font-size: 11px; color: var(--muted); text-align: center; }
+.progress li.active .label { color: var(--text); font-weight: 600; }
+
+.step {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px 18px; margin-bottom: 12px;
+}
+.step.done:not(.active) { background: #fbfbfa; }
+.step.active { border-color: var(--accent); box-shadow: 0 1px 3px rgba(31, 92, 74, .12); }
+.step-head { display: flex; align-items: center; gap: 10px; }
+.step-head h2 { margin: 0; font-size: 16px; }
+.step-num {
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  background: #f0efec; color: var(--muted); font-size: 12px; font-weight: 700; flex: none;
+}
+.step.active .step-num { background: var(--accent); color: #fff; }
+.step.done .step-num { background: var(--income); color: #fff; }
+.step-body { margin-top: 12px; }
+.step-body > p:first-child { margin-top: 0; }
+.step-body h3 { font-size: 13px; margin: 18px 0 8px; }
+.step-summary {
+  margin-top: 6px; margin-left: 34px; color: var(--muted); font-size: 13px;
+  font-family: ui-monospace, monospace;
+}
+
+.address-box {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  background: #f4f7f5; border: 1px solid #cfe0d8; border-radius: var(--radius);
+  padding: 14px 16px; margin: 14px 0;
+}
+.address-value { font-family: ui-monospace, monospace; font-size: 17px; flex: 1; min-width: 240px; word-break: break-all; }
+
+.how-to { margin: 0; padding-left: 20px; }
+.how-to li { margin-bottom: 10px; }
+
+.waiting { display: flex; align-items: center; gap: 10px; }
+.pulse {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+/* Respekterer at noen blir uvel av bevegelse. */
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; opacity: .7; } }
+
+.trade-grid, .source-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 10px; margin-top: 12px;
+}
+.trade-card {
+  display: flex; flex-direction: column; gap: 5px; text-align: left; width: 100%; height: 100%;
+  padding: 14px; border-radius: var(--radius); border: 1px solid var(--border); background: #fff;
+  cursor: pointer;
+}
+.trade-card:hover { border-color: var(--accent); }
+.trade-card.chosen { border-color: var(--accent); background: #f4f7f5; }
+.trade-emoji { font-size: 22px; }
+.trade-title { font-weight: 650; }
+.trade-blurb { font-size: 12px; color: var(--muted); line-height: 1.45; }
+
+.source-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: #fff; }
+.source-title { font-weight: 650; margin-bottom: 6px; }
+.source-card p { margin: 0 0 8px; color: var(--muted); }
+
+.finish { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+.banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  background: #f4f7f5; border: 1px solid #cfe0d8; border-radius: var(--radius);
+  padding: 12px 16px; margin-bottom: 18px;
+}
+.banner a { font-weight: 600; }
