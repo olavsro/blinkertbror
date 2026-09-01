@@ -10,7 +10,8 @@
  * grensesnitt; ingen kallende kode endres.
  */
 import { mkdir, writeFile, readFile, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { findRepoRoot } from "./env.js";
 import { sha256 } from "./dedup.js";
 
 export interface BlobRef {
@@ -91,8 +92,24 @@ export function getBlobStore(): BlobStore {
   if (driver !== "local") {
     throw new Error(`BLOB_DRIVER=${driver} er ikke implementert ennå. Implementer BlobStore og registrer den her.`);
   }
-  store = new LocalBlobStore(process.env.BLOB_LOCAL_PATH ?? "./storage/blobs");
+  store = new LocalBlobStore(resolveBlobRoot(process.env.BLOB_LOCAL_PATH ?? "./storage/blobs"));
   return store;
+}
+
+/**
+ * Gjør en relativ BLOB_LOCAL_PATH om til én absolutt sti, forankret i roten
+ * av monorepoet.
+ *
+ * Uten dette resolves stien mot `process.cwd()`, og prosessene starter i hver
+ * sin katalog: web i `apps/web`, worker i `apps/worker`, scripts i roten. Da
+ * skriver webhooken et rådokument til ett arkiv mens workeren leter etter det
+ * i et annet - og ekstraksjon av PDF-er og bilder feiler med «filen finnes
+ * ikke», selv om alt ser riktig konfigurert ut.
+ */
+export function resolveBlobRoot(configured: string): string {
+  if (isAbsolute(configured)) return configured;
+  const root = findRepoRoot();
+  return root ? resolve(root, configured) : resolve(configured);
 }
 
 export function guessMime(filename: string | null | undefined, fallback = "application/octet-stream"): string {

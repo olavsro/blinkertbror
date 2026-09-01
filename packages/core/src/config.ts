@@ -8,7 +8,7 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   ENCRYPTION_KEY: z.string().min(1),
   ANTHROPIC_API_KEY: z.string().optional(),
-  EXTRACTION_MODEL: z.string().default("claude-sonnet-5"),
+  EXTRACTION_MODEL: z.string().default("claude-opus-5"),
   INBOUND_EMAIL_DOMAIN: z.string().default("bilag.minapp.no"),
   INBOUND_WEBHOOK_SECRET: z.string().default("dev-secret"),
   INBOUND_PROVIDER: z.enum(["mailgun", "postmark", "mailhog"]).default("mailhog"),

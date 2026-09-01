@@ -147,8 +147,15 @@ export interface IngestionChannel<TConfig = unknown, TWebhook = unknown> {
   /** Navn i UI. */
   readonly label: string;
   readonly capabilities: ChannelCapabilities;
-  /** Validerer og typer konfigurasjonen. Én kilde til sannhet for kanalens felter. */
-  readonly configSchema: z.ZodType<TConfig>;
+  /**
+   * Validerer og typer konfigurasjonen. Én kilde til sannhet for kanalens felter.
+   *
+   * Input-typen er `unknown`, ikke `TConfig`: konfigurasjonen kommer fra
+   * databasen eller fra et skjema i UI og er utolket til den er parset. Uten
+   * dette kan ikke en kanal bruke `.default()` i skjemaet sitt, for da avviker
+   * skjemaets input-type fra output-typen.
+   */
+  readonly configSchema: z.ZodType<TConfig, z.ZodTypeDef, unknown>;
 
   /**
    * Kobler til. Returnerer konfigurasjon som skal lagres kryptert, og

@@ -1,0 +1,10 @@
+{
+  "From": "Spotify <no-reply@spotify.com>",
+  "To": "SLUG@bilag.minapp.no",
+  "Subject": "Your Spotify Premium receipt",
+  "MessageID": "<inv-SPO-2026-03-77120@spotify.com>",
+  "Date": "2026-03-01T06:03:00Z",
+  "TextBody": "Spotify AB\nRegeringsgatan 19, 111 53 Stockholm, Sweden\nVAT number: SE556703748501\n\nRECEIPT - Premium Individual\nInvoice number: SPO-2026-03-77120\nInvoice date: 2026-03-01\nBilling period: 2026-03-01 - 2026-03-31\n\nPremium Individual, 1 month           EUR 10.99\nVAT 0%                                EUR  0.00\nTotal                                 EUR 10.99\n\nReverse charge - VAT to be accounted for by the recipient.\nPaid automatically with card ending 4021.",
+  "HtmlBody": null,
+  "Attachments": []
+}

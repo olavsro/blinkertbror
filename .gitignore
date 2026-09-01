@@ -3,6 +3,14 @@ dist/
 .next/
 .env
 .env.local
-storage/blobs/
 *.log
 .turbo/
+.mailhog-bridge-state.json
+*.tsbuildinfo
+
+# Rådokumenter. Mønsteret må IKKE ha skråstrek i midten uten å være ment
+# forankret i roten: "storage/blobs/" matcher bare /storage/blobs, mens
+# prosesser som starter i apps/web lager sitt eget arkiv der. Bilag skal
+# aldri havne i git.
+storage/
+**/storage/
