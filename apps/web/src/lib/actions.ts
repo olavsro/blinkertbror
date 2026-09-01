@@ -183,15 +183,30 @@ export async function syncChannelNow(formData: FormData): Action {
   }
 
   const boss = await getQueue();
-  await sendJob(
+  // Kort vindu, ikke 60 sekunder. Vinduet skal stoppe dobbeltklikk, ikke en
+  // bruker som bevisst prøver igjen etter å ha lagt en fil i mappa - da ville
+  // vi svart «lagt i kø» uten at noe kjørte, og det er verre enn ingen knapp.
+  const jobId = await sendJob(
     boss,
     channel.capabilities.fragile ? JOBS.syncChannelFragile : JOBS.syncChannel,
     { userId: user.id, channelId, full, trigger: "manual" },
-    { singletonKey: channelId, singletonSeconds: 60 },
+    { singletonKey: channelId, singletonSeconds: 10 },
   );
 
   revalidatePath("/kanaler");
-  return setFlash({ ok: true, message: full ? "Full backfill lagt i kø." : "Synk lagt i kø." });
+  revalidatePath(`/kanaler/${channelId}`);
+
+  // null = pg-boss forkastet jobben fordi en lik allerede står i kø.
+  if (jobId === null) {
+    return setFlash({ ok: true, message: "Den henter allerede - vent noen sekunder og oppdater." });
+  }
+
+  return setFlash({
+    ok: true,
+    message: full
+      ? "Henter alt vi finner. Det kan ta litt tid - oppdater sida om noen sekunder."
+      : "Henter nye nå. Oppdater sida om noen sekunder.",
+  });
 }
 
 /** Tester en kanal her og nå, uten å gå veien om jobbkøen. */

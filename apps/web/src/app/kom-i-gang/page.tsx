@@ -170,7 +170,7 @@ export default async function GetStartedPage() {
               Vi ser gjennom innboksen din etter gamle kvitteringer og fakturaer, og henter bare
               dem. Resten av e-posten din rører vi ikke.
             </p>
-            <Link href="/kanaler">Sett opp</Link>
+            <Link href="/kanaler/ny/inbox_scan">Sett opp</Link>
           </div>
           <div className="source-card">
             <div className="source-title">🏦 Koble til banken</div>
@@ -178,14 +178,14 @@ export default async function GetStartedPage() {
               Da ser du hva som faktisk er betalt, og vi sier fra når en kvittering mangler. Vi får
               bare lese - vi kan aldri flytte penger.
             </p>
-            <Link href="/kanaler">Sett opp</Link>
+            <Link href="/kanaler/ny/bank">Sett opp</Link>
           </div>
           <div className="source-card">
             <div className="source-title">📁 Følg med på en mappe</div>
             <p className="small">
               Legger du kvitteringer i en mappe fra før, kan vi hente nye filer derfra automatisk.
             </p>
-            <Link href="/kanaler">Sett opp</Link>
+            <Link href="/kanaler/ny/folder_watch">Sett opp</Link>
           </div>
         </div>
       </Step>

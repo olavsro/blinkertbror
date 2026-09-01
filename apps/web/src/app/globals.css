@@ -189,6 +189,31 @@ button.primary:hover { background: #17493a; }
 }
 .banner a { font-weight: 600; }
 
+/* ──────────────────────────────────────────────────── Oppsett av kilder */
+
+
+.setup-form { display: flex; flex-direction: column; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field-label { font-weight: 600; font-size: 13px; }
+.field-help { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.field input[type="text"], .field input[type="password"], .field input[type="email"],
+.field input[type="url"], .field input[type="number"] { max-width: 460px; }
+.req { color: var(--expense); }
+.secret-note { color: var(--income); }
+
+.before-list { margin: 8px 0 0; padding-left: 20px; }
+.before-list li { margin-bottom: 7px; line-height: 1.5; }
+
+.preset-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.preset { background: #fff; }
+.preset.chosen { border-color: var(--accent); background: #f4f7f5; color: var(--accent); font-weight: 600; }
+
+.setup-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.bank-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 10px; }
+.bank-card { width: 100%; text-align: left; padding: 11px 13px; background: #fff; cursor: pointer; }
+.bank-card:hover { border-color: var(--accent); background: #f4f7f5; }
+
 /* ─────────────────────────────────────────────────────── Opplasting av filer */
 
 .dropzone {

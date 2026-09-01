@@ -5,11 +5,13 @@
  * Det er det som gjør at «legg til en kanal = skriv én fil» faktisk stemmer:
  * en ny kanal dukker opp her uten at denne fila endres.
  */
+import Link from "next/link";
 import { formatDistanceish } from "@/lib/format";
 import { inboundAddress } from "@qbikk/core/config";
 import { listChannels } from "@qbikk/ingestion";
 import { checkChannelHealth, syncChannelNow, toggleChannel } from "@/lib/actions";
 import { currentUser, listChannelRows } from "@/lib/data";
+import { formFor } from "@/lib/channel-forms";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +60,7 @@ export default async function ChannelsPage() {
                 return (
                   <tr key={row.id}>
                     <td>
-                      {row.name}
+                      <Link href={`/kanaler/${row.id}`}>{row.name}</Link>
                       <div className="small muted">
                         {channel?.label ?? row.type}
                         {channel?.capabilities.fragile ? " · skjør" : ""}
@@ -112,6 +114,16 @@ export default async function ChannelsPage() {
         )}
       </div>
 
+      <div className="panel">
+        <strong>Har du en kvittering akkurat nå?</strong>
+        <div className="small muted" style={{ margin: "4px 0 8px" }}>
+          Du trenger ikke sette opp noe for å legge inn en enkelt fil eller et bilde.
+        </div>
+        <Link href="/last-opp">
+          <button type="button">Last opp en fil</button>
+        </Link>
+      </div>
+
       <h2>Kan legges til</h2>
       <p className="small muted" style={{ marginTop: -6 }}>
         Rekkefølgen er anbefalt: de robuste først. Portalinnlogging nederst er skjør og bør bare
@@ -120,23 +132,26 @@ export default async function ChannelsPage() {
       <div className="cards">
         {available
           .filter((c) => !configured.has(c.type))
-          .map((c) => (
-            <div className="card" key={c.type}>
-              <div className="label">{c.type.replace(/_/g, " ")}</div>
-              <div style={{ fontSize: 15, margin: "4px 0 6px" }}>{c.label}</div>
-              <div className="small muted">
-                {[
-                  c.capabilities.push ? "tar imot" : null,
-                  c.capabilities.pull ? "henter" : null,
-                  c.capabilities.backfill ? "historikk" : null,
-                  c.capabilities.requiresCredentials ? "krever innlogging" : null,
-                  c.capabilities.fragile ? "skjør" : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
+          .map((c) => {
+            // Uten et skjema kan kilden fortsatt kjøre, men ikke settes opp
+            // herfra. Da sier vi det, i stedet for å lenke til en blindvei.
+            const form = formFor(c.type);
+            return (
+              <div className="card" key={c.type}>
+                <div style={{ fontSize: 15, marginBottom: 4 }}>{form?.title ?? c.label}</div>
+                <div className="small muted" style={{ minHeight: 46 }}>
+                  {form?.promise ?? "Kan settes opp fra kommandolinjen."}
+                </div>
+                {form ? (
+                  <Link href={`/kanaler/ny/${c.type}`}>
+                    <button type="button" style={{ marginTop: 8 }}>
+                      {form.unavailable ? "Les mer" : "Sett opp"}
+                    </button>
+                  </Link>
+                ) : null}
               </div>
-            </div>
-          ))}
+            );
+          })}
       </div>
     </>
   );
