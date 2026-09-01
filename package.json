@@ -1,0 +1,25 @@
+{
+  "name": "qbikk",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=20.11" },
+  "scripts": {
+    "dev": "concurrently -n web,worker -c cyan,magenta \"pnpm --filter @qbikk/web dev\" \"pnpm --filter @qbikk/worker dev\"",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "db:push": "pnpm --filter @qbikk/db push",
+    "db:studio": "pnpm --filter @qbikk/db studio",
+    "seed": "tsx scripts/seed.ts",
+    "demo:email": "tsx scripts/send-demo-email.ts",
+    "mcp": "pnpm --filter @qbikk/mcp start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4",
+    "@types/node": "^22.8.1"
+  }
+}

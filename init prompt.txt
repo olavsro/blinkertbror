@@ -1,0 +1,124 @@
+Jeg bygger et system som automatisk samler inn alle bilag (utgifter og
+inntekter) for selvstendig næringsdrivende i Norge, normaliserer dem og
+viser dem i ett dashboard. Kjører lokalt i utvikling.
+
+VIKTIGSTE PREMISS
+Jeg skal IKKE bygge integrasjoner per tjeneste. De fleste leverandører har
+ikke API, og en frisør, en DJ og en matbutikk har helt ulike leverandører.
+Fellesnevneren er at bilag kommer som DOKUMENTER — e-postkvitteringer,
+PDF-fakturaer, papirkvitteringer — og at pengene alltid vises i banken.
+Systemet skal derfor være dokument- og transaksjonsdrevet, ikke API-drevet.
+
+FEM INNTAKSKANALER (bygg i denne rekkefølgen)
+
+1. VIDERESENDINGSADRESSE (viktigst)
+   Hver bruker får en unik adresse, f.eks. ola-4f9c@bilag.minapp.no.
+   Innkommende e-post mottas, vedlegg og brødtekst lagres rått, og
+   sendes videre til ekstraksjon. Brukeren setter opp én
+   videresendingsregel hos seg selv, eller bytter fakturaadresse hos
+   leverandørene. Dette er hele onboardingen for de fleste.
+   Foreslå hvordan jeg tar imot e-post i utvikling (mailhog e.l.) og i
+   produksjon.
+
+2. INNBOKS-SKANNING
+   Valgfri IMAP/Gmail-tilkobling som søker bakover i tid etter
+   kvitteringsmønstre og importerer historikk. Skal kunne kjøre både som
+   engangs-backfill og som periodisk synk.
+
+3. BANK VIA PSD2
+   GoCardless Bank Account Data (gratis, dekker norske banker).
+   Banktransaksjoner er fasit på hva som er betalt. De blir "bilag uten
+   dokumentasjon" som skal matches mot dokumenter fra kanal 1, 2 og 5.
+
+4. FILOPPLASTING OG MAPPEOVERVÅKING
+   Drag-and-drop, mobilfoto av papirkvittering med OCR, og overvåking av
+   en Dropbox/Drive-mappe.
+
+5. BROWSERAUTOMATISERING (sist, og kun der det trengs)
+   For portaler som verken sender e-post eller har API. Skal være
+   isolert bak samme interface som resten, slik at skjørhet her ikke
+   smitter. Vurder MCP-basert browser-styring. Vær eksplisitt i
+   designet om risiko: lagring av innlogging, MFA, brudd på vilkår.
+   Foreslå hvordan jeg minimerer dette.
+
+EKSTRAKSJON — DET GENERISKE LAGET
+En LLM-basert ekstraktor tar et hvilket som helst dokument (e-posttekst,
+PDF, bilde) og returnerer strukturerte felter. Dette er grunnen til at
+systemet fungerer på tvers av bransjer uten integrasjoner.
+Krav:
+- Strukturert output med skjemavalidering
+- Confidence-score per felt; lav score sender bilaget til
+  "krever gjennomgang"-kø i stedet for å gjette
+- Rådokumentet lagres alltid uendret; ekstraksjonen er avledet og kan
+  kjøres på nytt uten tap
+- Brukerkorreksjoner lagres og brukes til å lage regler for samme
+  leverandør neste gang
+
+DATAMODELL (normalisert bilag)
+id, source_channel, external_ref, date, direction (income|expense),
+gross_amount, net_amount, vat_amount, vat_rate, currency,
+amount_nok + exchange_rate + rate_date, counterparty_name,
+counterparty_country, description, category, account_code,
+attachment_path, raw_payload, confidence, status
+(needs_review|matched|confirmed), dedup_hash, imported_at.
+I tillegg: brukere, inntakskanaler per bruker, vedlegg, kategoriregler,
+matchinger mellom banktransaksjon og dokument, synk-logg,
+korreksjonshistorikk.
+
+MATCHING OG DEDUPLISERING
+Samme kjøp kommer typisk inn både som banktransaksjon og som
+e-postkvittering. De skal bli ETT bilag med dokumentasjon, ikke to
+oppføringer. Match på beløp + dato innenfor et vindu + fuzzy
+motpartsnavn. Usikre matcher skal foreslås, ikke utføres automatisk.
+
+BRANSJEPROFILER
+En profil (dj, frisor, dagligvare) styrer kun kategorisett,
+kontoplan-mapping og hvilke leverandører systemet forventer å se —
+ikke hvilke tekniske integrasjoner som finnes. Test at DJ-caset og
+frisør-caset går gjennom nøyaktig samme kodevei.
+Eksempel DJ: Spotify/Tidal/SoundCloud er UTGIFTER (abonnement).
+Beatport og Bandcamp kan være både utgift (kjøp av musikk) og inntekt
+(salg). Retning må avgjøres av dokumentet, ikke av leverandørnavnet.
+
+NORSKE KRAV FRA START
+- MVA 25/15/12/0 og fritatt, per linje
+- Kjøp fra utlandet (Beatport, Bandcamp, Spotify) -> omvendt
+  avgiftsplikt, flagges
+- Valutaomregning med Norges Banks kurs på transaksjonsdato, lagret
+- Bilag lagres uendret i 5 år; ingen destruktiv redigering, kun
+  sporbare korreksjoner
+- Forbered eksport til SAF-T og til regnskapsfører
+
+ORKESTRERING
+Planlagte synkroniseringer, retry med backoff, og feilhåndtering per
+kanal. Jeg vurderer n8n som orkestrator. Gi meg en ærlig vurdering av
+n8n versus en vanlig jobbkø i applikasjonen — hva jeg vinner og hva jeg
+mister på kompleksitet, drift og feilsøking. Brukeren skal uansett
+ALDRI måtte bygge sin egen flow; oppsettet må være noen få klikk.
+
+MCP
+Jeg vil at systemet skal eksponere en MCP-server slik at en agent kan
+opprette og søke i bilag. Skisser hvilke verktøy den bør tilby.
+
+DASHBOARD
+Inntekt vs. utgift over tid, per kategori, per kanal. Bilagsliste med
+filter, søk og inline korrigering. "Krever handling"-kø: bank uten
+kvittering, lav confidence, mulige duplikater. Kanalstatus med sist
+synk og feil. MVA-oppsummering per termin.
+
+TEKNOLOGI
+Foreslå stack og begrunn kort. Preferanser: TypeScript, PostgreSQL,
+typed ORM, docker-compose for lokal kjøring. Krypter alt av tokens og
+innlogginger i ro.
+
+OPPGAVEN NÅ
+Ikke skriv all koden ennå. Start med:
+1. Stack, begrunnelse, og mappestruktur for et monorepo
+2. Full datamodell / skjema
+3. Interfacet som alle inntakskanaler implementerer, med typer
+4. Én referanseimplementasjon ende-til-ende: e-post inn -> rålagring ->
+   LLM-ekstraksjon -> normalisert bilag -> dedup -> synlig i dashboard
+5. Prosjektet skal kjøre lokalt
+
+Still oppklarende spørsmål før du begynner. Én bruker per installasjon i
+første versjon.

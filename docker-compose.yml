@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: qbikk-postgres
+    environment:
+      POSTGRES_USER: qbikk
+      POSTGRES_PASSWORD: qbikk
+      POSTGRES_DB: qbikk
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qbikk"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Lokal e-postmottaker. SMTP pa 1025, web-UI pa 8025.
+  # smtp-bridge under leser fra MailHog og POSTer til /api/inbound/email
+  # med NOYAKTIG samme payload-form som Mailgun/Postmark sender i produksjon.
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: qbikk-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  pgdata:

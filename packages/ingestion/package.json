@@ -1,0 +1,21 @@
+{
+  "name": "@qbikk/ingestion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@qbikk/core": "workspace:*",
+    "@qbikk/db": "workspace:*",
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.4",
+    "typescript": "^5.6.3"
+  }
+}
