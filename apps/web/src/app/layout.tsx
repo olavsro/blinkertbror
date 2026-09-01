@@ -36,6 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/">Oversikt</Link>
               <Link href="/bilag">Bilag</Link>
               <Link href="/handling">Krever handling{pending > 0 ? ` (${pending})` : ""}</Link>
+              <Link href="/last-opp">Last opp</Link>
               <Link href="/kanaler">Kanaler</Link>
               <Link href="/mva">MVA</Link>
             </nav>
