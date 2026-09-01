@@ -1,0 +1,10 @@
+{
+  "From": "Faktura <faktura@nordisk-harpleie.no>",
+  "To": "SLUG@bilag.minapp.no",
+  "Subject": "Faktura 240118 fra Nordisk Hårpleie AS",
+  "MessageID": "<faktura-240118@nordisk-harpleie.no>",
+  "Date": "2026-03-09T10:22:00Z",
+  "TextBody": "NORDISK HÅRPLEIE AS\nGrossistveien 4, 0581 Oslo\nOrganisasjonsnummer: 918 273 645 MVA\n\nFAKTURA\nFakturanr: 240118\nFakturadato: 2026-03-09\nForfallsdato: 2026-03-23\n\nKunde: Salong Nordlys\n\nVarelinjer:\n  Hårfarge 6.0 naturlig brun, 12 stk    kr  1 428,00\n  Folie profesjonell 250 m, 4 rull      kr    596,00\n  Blekepulver blått 500 g, 3 stk        kr    741,00\n\nSum eks. mva:                           kr  2 765,00\nMva 25 %:                               kr    691,25\nÅ betale:                               kr  3 456,25\n\nBetales til kontonummer 1503.22.14785 med KID 0002401187.",
+  "HtmlBody": null,
+  "Attachments": []
+}

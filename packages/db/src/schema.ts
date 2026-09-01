@@ -87,6 +87,15 @@ export const users = pgTable(
     inboundSlug: text("inbound_slug").notNull(),
     vatRegistered: boolean("vat_registered").notNull().default(true),
     baseCurrency: char("base_currency", { length: 3 }).notNull().default("NOK"),
+    /**
+     * Satt når brukeren har vært gjennom «Kom i gang». Null = ikke ferdig.
+     *
+     * Bare DETTE lagres om oppstarten. Hvor langt brukeren er kommet utledes
+     * ellers av virkeligheten - har de valgt bransje, har det kommet inn en
+     * kvittering - i stedet for av et lagret stegnummer. Da kan tilstanden
+     * aldri komme i utakt med det som faktisk finnes.
+     */
+    onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

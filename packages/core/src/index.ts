@@ -9,5 +9,6 @@ export * from "./contract.js";
 export * from "./categorize.js";
 export * from "./fx.js";
 export * from "./normalize.js";
+export * from "./pipeline.js";
 export * from "./config.js";
 export * from "./profiles/index.js";

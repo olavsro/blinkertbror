@@ -10,7 +10,18 @@
  * samtidig prompten. Beskrivelsene betyr noe - endrer du dem, endrer du
  * modellens oppførsel.
  */
-import { z } from "zod";
+/**
+ * MERK IMPORTEN: `zod/v4`, ikke `zod`.
+ *
+ * `zodOutputFormat()` i @anthropic-ai/sdk tar imot et zod v4-skjema. Skjemaet
+ * her sendes rett inn dit, så det MÅ være v4. zod 3.25 leverer begge API-ene
+ * side om side under hvert sitt inngangspunkt, så resten av kodebasen kan bli
+ * stående på det klassiske API-et.
+ *
+ * Flytter du denne importen tilbake til "zod", slutter `messages.parse()` å
+ * typesjekke - og verre: skjemaet blir ikke lenger det modellen faktisk får.
+ */
+import * as z from "zod/v4";
 
 export const DOCUMENT_TYPES = [
   "receipt",

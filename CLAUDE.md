@@ -51,11 +51,10 @@ Ytterligere forutsetninger som ble kommunisert og godtatt:
 
 ### Modellvalg — les dette før du endrer det
 
-`EXTRACTION_MODEL` skal stå til **`claude-opus-5`** som standard. `.env.example` sier
-per nå `claude-sonnet-5` — **det er en rest fra før modellvalget ble avklart og skal
-rettes** (se punkt 6.0). Ikke nedgrader modell for å spare penger uten at brukeren ber om
-det; kostnadskontroll gjøres via `effort` (står på `"medium"` i `ClaudeExtractor`) og
-prompt-caching, ikke via svakere modell.
+`EXTRACTION_MODEL` skal stå til **`claude-opus-5`** som standard. Dette er rettet både i
+`.env.example` og som default i `config.ts`. Ikke nedgrader modell for å spare penger uten
+at brukeren ber om det; kostnadskontroll gjøres via `effort` (står på `"medium"` i
+`ClaudeExtractor`) og prompt-caching, ikke via svakere modell.
 
 ---
 
@@ -80,26 +79,28 @@ prompt-caching, ikke via svakere modell.
 
 ```
 qbikk/
-├─ docker-compose.yml          # postgres + mailhog
+├─ docker-compose.yml          # postgres:5433 + mailhog:1025/8025
 ├─ .env.example                # alle env-variabler, dokumentert
-├─ pnpm-workspace.yaml
-├─ tsconfig.base.json          # strict, noUncheckedIndexedAccess
+├─ vitest.config.ts            # tester ligger i tests/, oppsett i tests/setup.ts
 │
 ├─ packages/
 │  ├─ db/                      # Drizzle-skjema + klient. Ingen forretningslogikk.
-│  ├─ core/                    # Domenet. Penger, MVA, valuta, dedup, matching,
-│  │                           # kategorisering, normalisering, bransjeprofiler.
+│  ├─ core/                    # Domenet + pipeline. Penger, MVA, valuta, dedup,
+│  │                           # matching, kategorisering, normalisering, profiler.
 │  ├─ extraction/              # LLM-laget. Claude + regelbasert fallback.
-│  ├─ ingestion/               # IngestionChannel-grensesnittet + kanalene.
-│  └─ jobs/                    # (IKKE LAGET ENNÅ) pg-boss-kø, jobbnavn, payload-typer
+│  ├─ ingestion/               # IngestionChannel + alle seks kanalene + registry.
+│  ├─ jobs/                    # pg-boss: jobbnavn, payload-typer, køer, retry.
+│  └─ export/                  # SAF-T Financial (XML) + CSV til regnskapsfører.
 │
 ├─ apps/
-│  ├─ web/                     # (IKKE LAGET ENNÅ) Next.js: dashboard + webhooks
-│  ├─ worker/                  # (IKKE LAGET ENNÅ) pg-boss-konsument
-│  └─ mcp/                     # (IKKE LAGET ENNÅ) MCP-server
+│  ├─ web/                     # Next.js: dashboard, bilag, handling, kanaler, mva,
+│  │                           # webhooks (/api/inbound/email, /api/upload) og eksport.
+│  ├─ worker/                  # pg-boss-konsument: ekstraksjon, synk, matching, cron.
+│  └─ mcp/                     # MCP-server, 10 verktøy over stdio.
 │
-├─ scripts/                    # (TOM) seed, mailhog-bro, demo-e-post
-├─ fixtures/                   # (TOM) eksempelbilag for DJ og frisør
+├─ scripts/                    # seed, mailhog-bro, demo-e-post, demo-bank, smoke
+├─ fixtures/emails/            # fem eksempelbilag (DJ, frisør, dagligvare)
+├─ tests/                      # vitest, 112 tester
 └─ storage/blobs/              # lokalt blob-lager (gitignored)
 ```
 
@@ -108,352 +109,229 @@ Avhengighetsretning (**bryt aldri denne**):
 ```
 db  ←  core  ←  extraction
         ↑  ↖
-        │    ingestion
+        │    ingestion,  export
         │        ↑
        jobs ─────┘
         ↑
     web / worker / mcp
 ```
 
-`core` importerer `db` (for typer og for `fx.ts`-cachen). `extraction` og `ingestion`
-importerer `core`. Ingenting i `packages/` importerer fra `apps/`.
+`core` importerer `db` (for typer, `fx.ts`-cachen og pipeline). `extraction`,
+`ingestion` og `export` importerer `core`. Ingenting i `packages/` importerer fra
+`apps/`.
+
+**`core` importerer ikke `ingestion`.** Pipeline definerer sin egen
+`PipelineDocument`, strukturelt lik `DocumentItem`. En kanal produserer noe som
+passer; core vet ikke at kanaler finnes. Samme grep for `ExtractorLike`.
 
 ---
 
 ## 5. Hva som ER bygget
 
-Alle filene under er ferdigskrevet og kommentert. **Ingen av dem er kjørt ennå** —
-`pnpm install` er ikke gjort, databasen er ikke opprettet. Se punkt 6.0.
+Alt under er skrevet, typesjekket og **kjørt mot en ekte database**. `pnpm
+typecheck` er grønn for alle ni pakker, og `pnpm test` gir 112 grønne tester.
+Hele veien fra en videresendt e-post til et bilag i UI-et er verifisert
+ende-til-ende.
 
 ### `packages/db` — komplett
 
-| Fil | Innhold |
-|---|---|
-| `src/schema.ts` (599 linjer) | **Hele datamodellen.** 15 tabeller + 7 enums + relasjoner + inferte typer. |
-| `src/client.ts` | `createDb()` / `getDb()` med globalThis-cache for Next.js hot reload. |
-| `src/index.ts` | Re-eksporterer skjema, klient og Drizzle-operatorer (`eq`, `and`, `desc` …). |
-| `drizzle.config.ts` | Peker på `src/schema.ts`, dialect postgres. |
+15 tabeller, 7 enums, relasjoner og inferte typer i `src/schema.ts` (599 linjer).
+`createDb()` / `getDb()` med globalThis-cache for Next.js hot reload.
+Skjemaet er pushet med `drizzle-kit push` og verifisert i Postgres.
 
-**Tabellene:**
-
-`users`, `ingestion_channels`, `raw_documents`, `attachments`, `extractions`,
-`counterparties`, `counterparty_aliases`, `vouchers`, `voucher_lines`,
-`bank_transactions`, `voucher_matches`, `category_rules`, `corrections`, `sync_runs`,
-`fx_rates`.
-
-**Fem invarianter som er kodet inn i skjemaet — ikke bryt dem:**
+**Fem invarianter som er kodet inn — ikke bryt dem:**
 
 1. `raw_documents` og `attachments` er append-only. Unique index på
    `(user_id, content_sha256)` er første forsvarslinje mot dubletter.
-2. `extractions` er versjonert. Ny kjøring = ny rad; gammel rad får `superseded_at`.
+2. `extractions` er versjonert. Ny kjøring = ny rad; gammel får `superseded_at`.
    Aldri UPDATE på en ekstraksjon.
-3. `vouchers.dedup_hash` har unique index på `(user_id, dedup_hash)`. Hashen inneholder
-   `origin` (`"bank"` / `"document"`) **med vilje**, slik at bankbilag og dokumentbilag
-   for samme kjøp kan eksistere samtidig og bli matchet. Uten det ville den andre
-   importen blitt stille avvist av indeksen.
+3. `vouchers.dedup_hash` har unique index på `(user_id, dedup_hash)`. Hashen
+   inneholder `origin` (`"bank"` / `"document"`) **med vilje**, slik at bankbilag
+   og dokumentbilag for samme kjøp kan eksistere samtidig og bli matchet.
 4. Alle beløp er `bigint` i **øre**. Aldri numeric, aldri float.
 5. `corrections` er revisjonssporet. Ingen rad slettes eller oppdateres.
 
-**Statussemantikk på `vouchers.status`** (enum er som spesifisert i oppdraget, men
-betydningen må dokumenteres fordi den ikke er selvforklarende):
-
-- `needs_review` — lav confidence, manglende påkrevd felt, mulig dublett, eller
-  banktransaksjon uten kvittering
-- `matched` — komplett bilag, evt. avstemt mot bank. Klart til bokføring.
-- `confirmed` — brukeren har godkjent
-- `duplicate` — avvist som dublett / slått sammen inn i et annet bilag
-
 ### `packages/core` — komplett
 
-| Fil | Ansvar | Nøkkelfunksjoner |
-|---|---|---|
-| `money.ts` | Penger som heltall i minste enhet | `parseAmount()` tåler `"1 234,56"`, `"1.234,56"`, `"1,234.56"`, `"kr 349,-"`. `formatAmount()`, `decimalsFor()` (JPY har 0 desimaler). |
-| `vat.ts` | Norsk MVA | `VAT_RATES` (25/15/12/0/fritatt), `splitFromGross()`, `splitFromNet()`, `shouldReverseCharge()`, `vatTermFor()` (norske terminer 1–6). |
-| `text.ts` | Normalisering + fuzzy | `normalizeCounterparty()` (fjerner AS/LLC/GmbH, Vipps/Klarna-støy, maskerte kortnummer), `counterpartySimilarity()` (Dice + containment), `htmlToText()`, `emailDomain()`. |
-| `dedup.ts` | Tre lag dedup | `sha256()`, `dedupHash()`, `isProbableDuplicate()`, `daysBetween()`. |
-| `matching.ts` | Bank ↔ dokument | `scoreMatch()` (beløp 0.5 / dato 0.2 / navn 0.3), `bestMatch()`. **Kobler aldri automatisk når nr. 1 og nr. 2 er innenfor 0.08 av hverandre** — to like gode kandidater er nettopp tilfellet der auto ville vært feil. |
-| `fx.ts` | Norges Bank | `getRate()` (cache → API → nærmeste tidligere), `convertToNok()`, `parseNorgesBankCsv()` (håndterer `UNIT_MULT` for SEK/DKK/JPY som noteres per 100). |
-| `crypto.ts` | Hemmeligheter i ro | AES-256-GCM, `encryptSecret()` / `decryptSecret()` / `encryptJson()`, versjonsprefiks `v1:` for nøkkelrotasjon. |
-| `storage.ts` | Blob-lager | `LocalBlobStore` — write-once, innholdsadressert (sha256), **ingen delete**. `BlobStore`-grensesnitt klart for S3/MinIO. |
-| `contract.ts` | **Kontrakten mellom LLM og resten** | `extractedDocumentSchema` (zod), `overallConfidence()` med feltvekter, `REVIEW_THRESHOLD = 0.8`. |
-| `categorize.ts` | Kategori + konto + MVA-kode | `categorize(profile, rules, input)` — ren funksjon. Prioritet: brukerlærte regler → profilregler i DB → leverandørhint i profilen → fallback. `ruleFromCorrection()` lærer av korreksjoner. |
-| `normalize.ts` | ExtractedDocument → bilag | `normalizeDocument()` og `normalizeBankTransaction()`. Returnerer `{ voucher, lines, reviewReasons }`. |
-| `config.ts` | Validert env | `config()`, `inboundAddress()`, `generateInboundSlug()`. |
-| `profiles/` | Bransjeprofiler som **ren data** | `dj`, `frisor`, `dagligvare`, `generic`. `getProfile(key)`. |
+`money`, `vat`, `text`, `dedup`, `matching`, `fx`, `crypto`, `storage`,
+`contract`, `categorize`, `normalize`, `config`, `profiles/` — som før.
 
-**Det viktigste designvalget i profilene:** leverandørhint setter **aldri** `direction`.
-Et hint har `expenseCategory` og/eller `incomeCategory`, og retningen kommer fra
-dokumentet. Beatport og Bandcamp har begge — kjøp av musikk er utgift, utbetaling av
-eget salg er inntekt. Spotify/Tidal/SoundCloud har bare `expenseCategory`.
+**Nytt: `env.ts`** — laster `.env` fra roten av monorepoet. `dotenv/config`
+leser fra `process.cwd()`, og både worker og web starter i sin egen katalog.
+Eksporteres bevisst **ikke** fra `index.ts`; den leser filsystemet.
+
+**Nytt: `pipeline.ts` — limet.** Alle skriveveier i systemet går gjennom disse:
+
+| Funksjon | Ansvar |
+|---|---|
+| `storeRawDocument()` | Lagre uendret. Idempotent på sha256, håndterer skrivekappløp. |
+| `runExtraction()` | Tolk med LLM. Ny rad, forrige får `superseded_at`. Mislykkede forsøk lagres, men merkes superseded med en gang. |
+| `upsertVoucher()` | Normaliser til bilag. Hard dedup på `dedup_hash`; konflikt er et normalt utfall, ikke en feil. |
+| `upsertBankTransaction()` | Banktransaksjon → bilag uten dokumentasjon. Gjetter aldri MVA. |
+| `proposeMatches()` | Foreslå kobling. Fungerer fra begge sider. Auto-kobler bare det utvilsomme. |
+| `mergeMatched()` | Slå bank + dokument til ett. Dokumentet overlever, bankbilaget merkes `duplicate`. Ingenting slettes. |
+| `rejectMatch()` | Avvis et forslag. Bilagene røres ikke. |
+| `applyCorrection()` | Rett ett felt. Skriver til `corrections` og lærer en regel der det gir mening. |
+| `createManualVoucher()` | Manuelt bilag gjennom **samme** `normalizeDocument()` — samme dedup, samme kategorisering. |
+| `attachDocumentToVoucher()` | Legg dokumentasjon på et bankbilag. |
+| `loadUserContext()` / `loadRules()` | Profil + regler i ett oppslag. |
 
 ### `packages/extraction` — komplett
 
+Som før. **Merk:** `contract.ts` i core importerer fra `zod/v4`, ikke `zod` —
+`zodOutputFormat()` i SDK-en krever et v4-skjema. zod 3.25 leverer begge API-ene
+side om side, så resten av kodebasen står på det klassiske. Flytter du importen
+tilbake, slutter `messages.parse()` å typesjekke.
+
+### `packages/ingestion` — komplett, alle seks kanaler
+
 | Fil | Innhold |
 |---|---|
-| `types.ts` | `Extractor`-grensesnittet, `ExtractionInput` (text / Buffer + mime / hints), `ExtractionResult`, `ExtractionError`. |
-| `prompt.ts` | `SYSTEM_PROMPT` (10 nummererte regler på norsk) + `PROMPT_VERSION = "2026-09-01.1"`. **Bump versjonen når du endrer prompten** — den lagres på hver ekstraksjon slik at du kan finne igjen og kjøre om alt som ble tolket av den gamle. |
-| `claude.ts` | `ClaudeExtractor`. Bruker `client.messages.parse()` med `zodOutputFormat(extractedDocumentSchema)` — zod-kontrakten i core er eneste sannhet for både modellen og typene. Sender PDF som `document`-blokk og bilder som `image`-blokk **før** tekstblokken. Håndterer `stop_reason: "refusal"` og `RateLimitError`. |
-| `heuristic.ts` | `HeuristicExtractor` — regelbasert, uten LLM. Finnes av to grunner: prosjektet skal kunne kjøres uten API-nøkkel, og tester må være deterministiske. Setter bevisst lav `fieldConfidence` slik at alt havner i gjennomgangskøen. |
-| `index.ts` | `getExtractor()` velger Claude når `ANTHROPIC_API_KEY` finnes, ellers heuristikk med en `console.warn`. `setExtractor()` for tester. |
+| `types.ts` | `IngestionChannel`-grensesnittet. `configSchema` har input-type `unknown`, slik at kanaler kan bruke `.default()`. |
+| `registry.ts` | **Det eneste stedet som vet hvilke kanaler som finnes.** |
+| `channels/email-forward.ts` | Kanal 1. Push. Mailgun/Postmark/MailHog normaliseres til `InboundEmail`. HMAC- og delt-hemmelighet-verifisering. |
+| `channels/inbox-scan.ts` | Kanal 2. IMAP/Gmail bakoversøk. Cursor `(uidValidity, lastUid)` — endres UIDVALIDITY, tas full backfill. `imapflow`/`mailparser` importeres dynamisk. |
+| `channels/bank-gocardless.ts` | Kanal 3. PSD2, bare `fetch`. Token caches 24 t. 401/403 → `ChannelAuthError`. Kun `booked`-transaksjoner. Beløp via streng, aldri `parseFloat`. |
+| `channels/file-upload.ts` | Kanal 4a. Push. Én fil = ett bilag. |
+| `channels/folder-watch.ts` | Kanal 4b. Lokal driver ferdig; Dropbox/Drive er samme `FolderDriver`-grensesnitt og kaster eksplisitt til de er skrevet. |
+| `channels/browser.ts` | Kanal 5. `fragile: true`. **Samtykke per portal er en bryter i koden**, ikke en kommentar: uten `consentedAt` kaster `pull()`. Lagrer aldri passord — bare sesjonscookies med utløp. `minHoursBetweenRuns` håndheves. Selve browseren ligger bak `PortalDriver` og er ikke implementert. |
 
-### `packages/ingestion` — delvis
+### `packages/jobs` — komplett
 
-| Fil | Status |
-|---|---|
-| `types.ts` | **Ferdig.** Hele `IngestionChannel`-grensesnittet. |
-| `channels/email-forward.ts` | **Ferdig.** Kanal 1. |
-| resten | **Mangler.** Se punkt 6. |
+`JOBS`-navn bundet til `JobPayloads` via typede `sendJob()`/`workJob()`, så feil
+payload er en kompileringsfeil. Retry-policy per kø i `QUEUE_DEFS`.
+Skjøre kanaler har **egen kø** (`channel.sync.fragile`, `policy: singleton`,
+ett forsøk, 15 min pause) og kan aldri blokkere bank- og e-postsynken.
+`channel.schedule` er cron-fordeleren: pg-boss sin cron kan bare sende én fast
+payload, så den jobben slår opp aktive kanaler og sender én synkjobb per kanal.
 
-**`IngestionChannel`-grensesnittet** (`packages/ingestion/src/types.ts`) — dette er
-systemets viktigste abstraksjon:
+> **Rekkefølgen på kø-opprettelsen betyr noe.** pg-boss har en fremmednøkkel fra
+> `queue.dead_letter` til `queue.name`. `createQueue()` oppretter derfor alle
+> dead letter-mål først. Fjerner du den sorteringen, feiler oppstarten.
 
-```ts
-interface IngestionChannel<TConfig, TWebhook> {
-  readonly type: ChannelType;              // email_forward | inbox_scan | bank |
-                                           // file_upload | folder_watch | browser
-  readonly label: string;
-  readonly capabilities: ChannelCapabilities;  // push/pull/backfill/fragile …
-  readonly configSchema: z.ZodType<TConfig>;
+### `packages/export` — komplett
 
-  setup(input): Promise<SetupResult>;      // få klikk, returnerer instruksjoner
-  healthCheck(ctx): Promise<ChannelHealth>;
-  pull?(ctx, opts): AsyncIterable<IngestionItem>;   // pollende kanaler
-  receive?(ctx, payload: TWebhook): Promise<IngestionItem[]>;  // push-kanaler
-  nextCursor?(items, previous): Cursor;
-  teardown?(ctx): Promise<void>;
-}
-```
+SAF-T Financial (XML) + to CSV-varianter. Begge formatene bygger på **samme**
+`postingsFor()`, så de kan ikke regne ulikt. `checkBalanced()` er kontrollsummen;
+eksportruta nekter å levere en SAF-T-fil som ikke går i null.
 
-`IngestionItem` er en union: `DocumentItem` (går til ekstraksjon) eller
-`TransactionItem` (blir bilag uten dokumentasjon). En kanal **lagrer ingenting, kaller
-ingen LLM og vet ikke hva et bilag er.**
+Motkontoen (2400 leverandørgjeld / 1500 kundefordringer) er en **antakelse**, og
+den står skrevet i `<Description>` på hver transaksjon slik at regnskapsføreren
+ser den. **Filen er ikke validert mot den offisielle XSD-en** — gjør det før
+noen sender den inn på ekte.
 
-`ChannelAuthError` (brukeren må gjøre noe — ikke retry blindt) og
-`ChannelTemporaryError` (retry med backoff) er definert og skal brukes.
+### `apps/worker` — komplett
 
-**`EmailForwardChannel`** er ferdig og inneholder:
-- `InboundEmail` — den felles formen alle leverandører normaliseres til (Postmark-lik).
-- `normalizeMailgun(fields, attachments)` — Mailgun multipart → `InboundEmail`.
-- `verifyMailgunSignature()` (HMAC-SHA256 over timestamp+token) og
-  `verifySharedSecret()` (Postmark / MailHog-bro).
-- `slugFromRecipient()` — lokaldelen identifiserer brukeren, `+`-suffiks strippes.
-- `setup()` returnerer de tre instruksjonene brukeren skal se i UI.
+pg-boss-konsument. Eneste prosess med `supervise` og `schedule` på.
+`runChannelSync()` dekrypterer konfig, kjører `pull()`, lagrer, flytter cursor og
+skriver `sync_runs`. Skillet mellom feiltypene er poenget:
 
----
+- `ChannelAuthError` → kanalen merkes `needs_auth`, og **jobben anses som
+  fullført**. Å retrye hver time i tre uker hjelper ikke når brukeren må logge
+  inn, og det ville fylt dead letter-køen med støy som skjuler ekte feil.
+- alt annet → kastes videre, pg-boss retryer med backoff.
 
-## 6. Hva som GJENSTÅR — i denne rekkefølgen
-
-### 6.0 Gjør prosjektet kjørbart (gjør dette FØRST)
-
-Ingenting er installert eller kjørt. Konkret:
-
-1. **Rett `.env.example`:** `EXTRACTION_MODEL=claude-opus-5` (står nå `claude-sonnet-5`).
-2. `pnpm install` i rot. **Forvent versjonskonflikter** — alle avhengigheter er skrevet
-   med caret-ranges uten å være verifisert mot npm. Særlig:
-   - `@anthropic-ai/sdk` er satt til `>=0.110.0 <1` fordi `messages.parse()` og
-     `@anthropic-ai/sdk/helpers/zod` krever nyere SDK. Verifiser at
-     `zodOutputFormat` finnes på den installerte versjonen.
-   - `drizzle-orm ^0.36.0` / `drizzle-kit ^0.28.0` — sjekk at `pgEnum`-signaturen og
-     den andre parameteren til `pgTable` (index-callbacken) matcher installert versjon.
-     Nyere drizzle-kit vil ha index-callbacken som **array**, ikke objekt.
-3. `docker compose up -d` → postgres på **5433**, mailhog på 1025/8025.
-4. `cp .env.example .env`, generer nøkkel:
-   `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` →
-   `ENCRYPTION_KEY`.
-5. `pnpm db:push` (drizzle-kit push mot skjemaet).
-6. `pnpm typecheck` og fiks det som kommer. **Kjente sannsynlige feil:**
-   - `packages/core/src/normalize.ts` bruker `Minor`-typen på steder der Drizzle
-     forventer `number` — brand-typen kan kreve en cast.
-   - `voucherLines.quantity` er `numeric` (string i Drizzle) mens `buildLines()`
-     sender `string | null` — bør stemme, men verifiser.
-   - `fx.ts` importerer `lte`/`desc` fra `@qbikk/db` — bekreft at de re-eksporteres.
-
-### 6.1 `packages/jobs` — pg-boss
-
-Opprett `packages/jobs` med:
-
-```ts
-// jobbnavn og payload-typer, ett sted
-export const JOBS = {
-  ingestDocument: "ingest.document",     // { userId, rawDocumentId }
-  extractDocument: "extract.document",   // { userId, rawDocumentId, force?: boolean }
-  syncChannel: "channel.sync",           // { userId, channelId, full?: boolean }
-  matchVouchers: "match.run",            // { userId, voucherId? }
-  fetchFxRate: "fx.fetch",               // { currency, date }
-} as const;
-```
-
-- `createQueue()` som starter pg-boss mot samme `DATABASE_URL`.
-- Retry-policy per jobbtype: `retryLimit`, `retryDelay`, `retryBackoff: true`.
-  Kanaler med `capabilities.fragile === true` (browser) skal ha **egen, mildere**
-  policy og skal aldri blokkere de robuste kanalene.
-- `schedule()` for periodiske synker — pg-boss har innebygd cron.
-
-### 6.2 Pipeline-funksjonene (legg i `packages/core/src/pipeline.ts`)
-
-Dette er limet, og det er her referanseimplementasjonen faktisk oppstår.
-
-```ts
-// 1. Lagre rått. Idempotent på sha256 — returnerer eksisterende ved dublett.
-storeRawDocument(db, blobStore, { userId, channelId, channelType, item: DocumentItem })
-  → { rawDocumentId, isDuplicate, attachments }
-
-// 2. Kjør ekstraksjon. Velger primærvedlegg (PDF > bilde > brødtekst).
-runExtraction(db, extractor, { userId, rawDocumentId, force })
-  → { extractionId, document }
-// Skriver ny rad i extractions, setter superseded_at på forrige.
-
-// 3. Normaliser + lagre bilag. Håndterer unique-violation på dedup_hash.
-upsertVoucher(db, { userId, profile, rules, extraction, rawDocument })
-  → { voucherId, isDuplicate, reviewReasons }
-
-// 4. Foreslå matcher mot bankbilag i vindu.
-proposeMatches(db, { userId, voucherId })
-  → MatchProposal[]
-// autoLink=true → skriv voucher_matches med status 'confirmed' og slå sammen.
-// autoLink=false → status 'proposed', dukker opp i "krever handling".
-
-// 5. Slå sammen bank + dokument til ETT bilag.
-mergeMatched(db, { bankVoucherId, documentVoucherId })
-// Dokumentbilaget beholdes (det har MVA og dokumentasjon), får bookingDate fra
-// banken, needsDocumentation=false. Bankbilaget får status='duplicate' og
-// supersedesVoucherId satt. Ingenting slettes.
-```
-
-Regelen fra oppdraget: **usikre matcher foreslås, ikke utføres.**
-
-### 6.3 `apps/worker`
-
-pg-boss-konsument som registrerer handlerne over. Egen prosess, `tsx watch src/index.ts`
-i dev. Skriver `sync_runs`-rader ved start/slutt og oppdaterer
-`ingestion_channels.last_sync_at` / `last_error` / `consecutive_failures`.
-
-### 6.4 `apps/web` — Next.js
-
-**Webhook-endepunktet er kritisk stien i referanseimplementasjonen:**
-
-`app/api/inbound/email/route.ts`:
-1. Verifiser signatur (`verifyMailgunSignature` eller `verifySharedSecret` avhengig av
-   `INBOUND_PROVIDER`). **Avvis med 401 ved feil** — uten dette kan hvem som helst POSTe
-   falske bilag inn i regnskapet.
-2. Normaliser body → `InboundEmail` (`normalizeMailgun` for mailgun, direkte for
-   postmark/mailhog).
-3. `slugFromRecipient()` → slå opp `users.inboundSlug`. Ukjent slug → 200 + logg
-   (ikke 404, ellers retryer leverandøren i evighet).
-4. `emailForwardChannel.receive(ctx, payload)` → `DocumentItem[]`.
-5. `storeRawDocument()` → `send(JOBS.extractDocument)`.
-6. Svar **200 raskt**. All tung jobb skjer i worker.
-
-Sider som skal bygges:
+### `apps/web` — komplett
 
 | Rute | Innhold |
 |---|---|
-| `/` | Dashboard: inntekt vs. utgift over tid, per kategori, per kanal. |
-| `/bilag` | Bilagsliste med filter (dato, status, kategori, kanal, retning), fritekstsøk, inline korrigering. Hver korrigering → rad i `corrections` + `ruleFromCorrection()`. |
-| `/handling` | «Krever handling»-kø: bank uten kvittering (`needsDocumentation`), lav confidence (`status='needs_review'`), foreslåtte matcher (`voucher_matches.status='proposed'`), mulige duplikater. |
-| `/kanaler` | Kanalstatus: sist synk, siste feil, `healthCheck()`-knapp, `setup()`-instruksjoner. |
-| `/mva` | MVA-oppsummering per termin (`vatTermFor()`), inkl. egen seksjon for omvendt avgiftsplikt. |
+| `/` | Inntekt vs. utgift per måned, per kategori, per kanal. CSS-stolper, ingen chart-bibliotek. |
+| `/bilag` | Filter, fritekstsøk, kategori endres inline. |
+| `/bilag/[id]` | Alle felter redigerbare, varelinjer, **korreksjonshistorikk**, rådokument. |
+| `/handling` | Foreslåtte koblinger, bank uten kvittering, lav confidence, kanaler som har stoppet. |
+| `/kanaler` | Status, test, synk, backfill, pause. Leser registret — en ny kanal dukker opp uten at fila endres. |
+| `/mva` | Per termin, med **egen seksjon** for omvendt avgiftsplikt + eksportlenker. |
+| `/api/inbound/email` | Webhooken. Signatur → normaliser → slå opp slug → kanal → lagre → køe → 200. |
+| `/api/upload` | Kanal 4a. Samme form som e-postruta under overflaten. |
+| `/api/eksport/[format]` | `saft`, `csv`, `enkel`. |
 
-**Viktig for klientkomponenter:** importer fra undermoduler (`@qbikk/core/money`,
-`@qbikk/core/vat`), ikke fra `@qbikk/core` — hovedindeksen drar inn `fx.ts` som
-importerer `postgres`.
+Tre ting det er lett å tråkke i:
 
-### 6.5 Resterende kanaler
+1. **Alt er serverkomponenter uten en linje klient-JavaScript.** Server actions
+   må derfor returnere `void` — `<form action={fn}>` godtar ikke annet.
+   Tilbakemelding går via `lib/flash.ts` (kortlevd cookie), ikke `useActionState`.
+2. **`next.config.ts` setter `resolve.extensionAlias`.** Workspace-pakkene bruker
+   `.js`-endelser i importene sine (som ESM krever) mens filene er `.ts`. Uten
+   dette feiler bygget på «Can't resolve ./vat.js».
+3. **Klientkomponenter må importere fra undermoduler** (`@qbikk/core/money`),
+   ikke fra `@qbikk/core` — hovedindeksen drar inn `fx.ts` og `pipeline.ts`,
+   som importerer `postgres`.
 
-Alle implementerer `IngestionChannel`. Én fil hver, ingen andre filer endres.
+### `apps/mcp` — komplett
 
-**Kanal 2 — `channels/inbox-scan.ts` (IMAP/Gmail).**
-`pull: true`, `backfill: true`. Bruk `imapflow` + `mailparser`, men **importer dem
-dynamisk inne i `pull()`** slik at registret ikke drar dem inn ved oppstart. Cursor =
-`{ uidValidity, lastUid }`. Søk bakover på `SUBJECT`/`BODY` med
-`kvittering|faktura|receipt|invoice|order confirmation|ordrebekreftelse`. Passord/token
-krypteres med `encryptJson()`. Gmail bør bruke OAuth, ikke app-passord.
+Ti verktøy over stdio: `search_vouchers`, `get_voucher`, `list_action_items`,
+`vat_summary`, `channel_status`, `create_voucher`, `attach_document`,
+`correct_voucher`, `propose_match`, `confirm_match`.
 
-**Kanal 3 — `channels/bank-gocardless.ts` (PSD2).**
-`pull: true`, `producesTransactions: true`. Ingen ekstra avhengigheter — bruk `fetch`.
-Flyt: `/token/new/` → `/institutions/?country=no` → `/agreements/enduser/` →
-`/requisitions/` (returnerer `link` brukeren må åpne — det er `SetupResult.pending`) →
-`/accounts/{id}/transactions/`. Cursor = `{ lastBookingDate }`. Samtykke varer 90 dager
-→ når API-et svarer 401/403, kast `ChannelAuthError` slik at UI ber om ny godkjenning.
+**Ingen av dem skriver til databasen selv** — alle kaller pipeline-funksjonene.
+Derfor *kan* de ikke omgå dedup, korreksjonshistorikk eller matchereglene.
+Verifisert: `create_voucher` to ganger med samme data returnerer det
+eksisterende bilaget. Legger noen inn et `db.insert(vouchers)` her, er det den
+endringen som skal stoppes i review.
 
-**Kanal 4 — `channels/file-upload.ts` + `channels/folder-watch.ts`.**
-Upload er trivielt: multipart → `DocumentItem`. Mobilfoto trenger **ingen egen OCR** —
-Claude leser bildet direkte. Folder-watch: Dropbox/Drive-cursor, `pull: true`.
+`propose_match` og `confirm_match` er bevisst adskilt: en agent kan foreslå,
+men å slå to bilag sammen krever et eget, eksplisitt kall.
 
-**Kanal 5 — `channels/browser.ts`. Bygg denne SIST.**
-`fragile: true`. Skal være isolert bak samme grensesnitt slik at skjørhet ikke smitter.
-Risikoene må være eksplisitte i koden og i UI:
+### Tester — 112, alle grønne
 
-- **Lagring av innlogging.** Lagre aldri passord i klartekst. Foretrekk *session cookies*
-  over passord, med kort levetid, kryptert med `encryptJson()`.
-- **MFA.** Kan ikke automatiseres forsvarlig. Design for at brukeren logger inn
-  interaktivt én gang og at vi bare gjenbruker sesjonen til den utløper.
-- **Brudd på vilkår.** Mange portaler forbyr automatisert innlogging. UI må si dette
-  rett ut og kreve aktivt samtykke per portal.
-- **Minimering:** kjør bare når de andre kanalene ikke dekker leverandøren; kjør sjelden;
-  hent kun dokumenter, aldri annet; logg hvert kall.
+`tests/setup.ts` mocker bort `fx.ts`, så ingen test rører nett eller database.
 
-MCP-basert browserstyring er verdt å vurdere her — det holder browserlogikken i en egen
-prosess bak et verktøygrensesnitt, som passer perfekt med at kanalen skal være isolert.
+| Fil | Dekker |
+|---|---|
+| `profiles.test.ts` | **Kravet fra oppdraget:** DJ og frisør gjennom nøyaktig samme `normalizeDocument()`-kall, med assert på at det eneste som skiller er kategori og kontokode. |
+| `direction.test.ts` | Beatport som utgift og som inntekt. Retning fra dokumentet, ikke navnet. |
+| `dedup.test.ts` | Samme kvittering fra to kanaler → ett bilag. Bank + kvittering → to bilag. |
+| `matching.test.ts` | Tvetydig match blir foreslått, ikke utført. |
+| `money` / `vat` / `fx` | Beløpsformater, MVA-satser og terminer, `UNIT_MULT=2`. |
+| `channels.test.ts` | Signaturverifisering, registret, valg av hovedvedlegg. |
+| `export.test.ts` | Debet = kredit, XML-escaping, CSV-formatering. |
 
-### 6.6 `apps/mcp` — MCP-server
+---
 
-Verktøy den bør tilby (skisse fra oppdraget, ikke implementert):
+## 6. Hva som GJENSTÅR
 
-| Verktøy | Signatur | Merknad |
-|---|---|---|
-| `search_vouchers` | `{ query?, from?, to?, direction?, status?, category?, counterparty?, minAmount?, maxAmount?, limit? }` | Fritekst + filtre. Returnerer normaliserte bilag. |
-| `get_voucher` | `{ id }` | Inkl. linjer, korreksjonshistorikk og lenke til rådokument. |
-| `create_voucher` | `{ date, direction, grossAmount, currency, counterpartyName, description, category? }` | Manuelt bilag, `sourceChannel: "manual"`. Kjører samme dedup som alt annet. |
-| `attach_document` | `{ voucherId, filename, contentBase64, mime }` | Legger dokumentasjon på et bankbilag. |
-| `list_action_items` | `{ }` | «Krever handling»-køen som strukturert liste. |
-| `propose_match` / `confirm_match` | `{ bankVoucherId, documentVoucherId }` | Confirm skal kreve eksplisitt kall — agenten skal ikke kunne auto-koble. |
-| `correct_voucher` | `{ id, field, value, reason }` | Skriver til `corrections`, aldri destruktivt. |
-| `vat_summary` | `{ year, term? }` | MVA per termin, inkl. omvendt avgiftsplikt. |
-| `channel_status` | `{ }` | Sist synk, feil, hva som krever brukerhandling. |
+Alt fra den opprinnelige lista er bygget. Det som står igjen er reelt nytt arbeid:
 
-**Skrivende verktøy må ikke kunne omgå dedup, korreksjonshistorikk eller
-matchereglene.** De skal kalle de samme pipeline-funksjonene som resten av systemet.
+### 6.1 Ekte kjøring med `ANTHROPIC_API_KEY`
 
-### 6.7 Tester (vitest)
+Systemet er kjørt ende-til-ende på `HeuristicExtractor`. `ClaudeExtractor` er
+skrevet og typesjekket, men **aldri kalt mot API-et**. Sett nøkkelen og kjør
+`pnpm demo:email alle` — forvent at kvaliteten hopper (heuristikken bommer bl.a.
+på totalen i frisørfakturaen og finner ikke selgers land, som er det som utløser
+omvendt avgiftsplikt). Ikke «fiks» heuristikken ved å gjette bedre; det er
+meningen at den skal sende alt til gjennomgang.
 
-Minimum, og **den første er et krav fra oppdraget**:
+### 6.2 Kanaler som trenger ekte legitimasjon for å testes
 
-1. `profiles.test.ts` — **DJ-caset og frisør-caset gjennom nøyaktig samme kodevei.**
-   Samme `normalizeDocument()`-kall, bare ulik `profile`. Assert at begge produserer
-   gyldig bilag og at forskjellen kun er `category` / `accountCode`.
-2. `direction.test.ts` — Beatport som utgift (kjøpskvittering) og som inntekt
-   (payout statement). Assert at retning kommer fra dokumentet, ikke fra navnet.
-3. `money.test.ts` — `parseAmount()` mot alle formatene.
-4. `vat.test.ts` — 25/15/12, omvendt avgiftsplikt, `vatTermFor()`.
-5. `dedup.test.ts` — samme kvittering fra to kanaler → ett bilag; bank + kvittering →
-   to bilag som matches.
-6. `matching.test.ts` — tvetydig match (to like beløp samme dag) blir **foreslått**,
-   ikke utført.
-7. `fx.test.ts` — `parseNorgesBankCsv()` med `UNIT_MULT=2`.
+`inbox-scan` (IMAP) og `bank-gocardless` (PSD2) er skrevet mot dokumentasjonen,
+men aldri kjørt mot en ekte server. Første kjøring vil sannsynligvis avdekke
+detaljer i `imapflow`-søkesyntaksen og i GoCardless sitt transaksjonsformat.
+`pnpm demo:bank` går inn på `upsertBankTransaction` og dekker alt *etter*
+kanalen, så matchingen er verifisert uansett.
 
-Bruk `HeuristicExtractor` eller en stub via `setExtractor()` — aldri ekte API-kall i test.
+### 6.3 Portaldrivere til kanal 5
 
-### 6.8 Scripts og fixtures
+`BrowserChannel` har grensesnittet, samtykkesperren og minimeringen. Selve
+`PortalDriver` er ikke skrevet for noen portal. En MCP-server med browserverktøy
+i egen prosess passer godt — da er skjørheten isolert to ganger.
 
-- `scripts/seed.ts` — oppretter én bruker med profil fra `DEFAULT_PROFILE`, genererer
-  `inboundSlug`, oppretter `email_forward`-kanalen, seeder profilens leverandørhint
-  som `category_rules` med `origin: "profile"`.
-- `scripts/mailhog-bridge.ts` — poller `MAILHOG_API_URL/api/v2/messages`, parser med
-  `mailparser`, POSTer `InboundEmail`-JSON til `/api/inbound/email` med
-  `x-qbikk-secret`-header. Husk å holde styr på hvilke meldinger som er sendt.
-- `scripts/send-demo-email.ts` — sender en fixture til MailHog på SMTP 1025.
-- `fixtures/emails/` — minst: Beatport-kjøpskvittering (USD, utgift),
-  Beatport payout statement (USD, inntekt), Spotify-abonnement (EUR, omvendt
-  avgiftsplikt), norsk frisørgrossist-faktura (NOK, 25 %), dagligvarekvittering med
-  blandet 15/25 %.
+### 6.4 Dropbox- og Drive-drivere
 
-### 6.9 SAF-T og eksport til regnskapsfører
+`FolderDriver`-grensesnittet finnes, `localFolderDriver` er ferdig.
+`driverFor()` kaster eksplisitt for de to andre, i stedet for å late som
+kanalen virker.
 
-Ikke implementert, men skjemaet er forberedt: `account_code` (NS 4102), `vat_code` per
-linje, `counterparty` med org.nr og land, `exchange_rate` + `rate_date` lagret. Neste
-steg er en `packages/export`-modul som skriver SAF-T Financial (XML) og en enkel CSV for
-regnskapsførere som ikke tar SAF-T.
+### 6.5 SAF-T mot offisiell XSD
+
+Filen er velformet og går i null, men er ikke validert mot Skatteetatens skjema.
+Gjør det før noen bruker den på ekte.
+
+### 6.6 Auth og flere brukere
+
+`user_id` er i hele skjemaet og i alle spørringer. `currentUser()` i
+`apps/web/src/lib/data.ts` og `requireUserId()` i `apps/mcp/src/index.ts` er de
+**to** stedene som slår fast hvem «vi» er. Når auth skal inn, byttes de ut.
+Det finnes fortsatt ingen RLS i databasen.
 
 ---
 
@@ -479,34 +357,60 @@ Kombinerende diakritiske tegn i regex maa skrives som escape-sekvenser
 `config.ts`, ikke gjor det om.
 ---
 
+---
+
 ## 8. Kjør lokalt
 
 ```bash
-cp .env.example .env          # sett ENCRYPTION_KEY og evt. ANTHROPIC_API_KEY
+cp .env.example .env
+# generer ENCRYPTION_KEY:
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# valgfritt, men anbefalt: sett ANTHROPIC_API_KEY
+
 docker compose up -d          # postgres:5433, mailhog:1025/8025
 pnpm install
 pnpm db:push
-pnpm seed
+pnpm seed                     # én bruker + bilagsadresse + kategoriregler
 pnpm dev                      # web på :3000, worker parallelt
-# i eget vindu:
-pnpm tsx scripts/mailhog-bridge.ts
-pnpm demo:email               # sender en fixture inn i systemet
+
+# i et eget vindu - broen som gjør MailHog om til produksjonswebhooken:
+pnpm mailhog:bridge
+
+# og så, i et tredje:
+pnpm demo:email alle          # sender de fem fixturene inn via SMTP
+pnpm demo:bank                # syntetiske banktrekk -> viser matching
 ```
 
-Uten `ANTHROPIC_API_KEY` kjører systemet på `HeuristicExtractor` og alle bilag havner i
-gjennomgangskøen. Det er riktig oppførsel — ikke «fiks» det ved å gjette bedre.
+Andre nyttige kommandoer:
+
+```bash
+pnpm test                     # 112 tester, ingen nett- eller databasekall
+pnpm typecheck                # alle ni pakker
+pnpm smoke <fixture>          # kjører én fixture gjennom pipeline og skriver ut bilaget
+pnpm mcp                      # MCP-serveren på stdio
+pnpm db:studio                # Drizzle Studio mot databasen
+```
+
+Uten `ANTHROPIC_API_KEY` kjører systemet på `HeuristicExtractor`, og alle bilag
+havner i gjennomgangskøen. **Det er riktig oppførsel — ikke «fiks» det ved å
+gjette bedre.**
 
 ---
 
 ## 9. Åpne spørsmål til brukeren
 
-Disse er ikke blokkerende, men bør avklares før produksjon:
+Ikke blokkerende, men bør avklares før produksjon:
 
-1. **Domene for bilagsadressene** — `bilag.minapp.no` er en placeholder. Hvilket domene
-   skal faktisk brukes, og er det tilgjengelig for MX-oppsett hos Mailgun/Postmark?
-2. **GoCardless-konto** — er den opprettet? Secret ID/key trengs før kanal 3 kan testes.
-3. **Oppbevaring av rådokumenter** — lokalt filsystem holder i utvikling. I produksjon
-   må bilag ligge trygt i fem år: S3 med versjonering og object lock, eller tilsvarende.
-4. **Flere brukere** — v1 er én bruker per installasjon, men skjemaet tåler flere.
-   Når auth skal inn, må alle spørringer få `user_id`-filter — de har det allerede i
-   signaturene, men det er ingen RLS i databasen ennå.
+1. **Domene for bilagsadressene** — `bilag.minapp.no` er fortsatt en placeholder.
+   Hvilket domene skal brukes, og er det tilgjengelig for MX-oppsett hos
+   Mailgun/Postmark?
+2. **GoCardless-konto** — er den opprettet? Secret ID/key trengs før kanal 3 kan
+   testes mot en ekte bank.
+3. **Oppbevaring av rådokumenter** — lokalt filsystem holder i utvikling. I
+   produksjon må bilag ligge trygt i fem år: S3 med versjonering og object lock,
+   eller tilsvarende. `BlobStore`-grensesnittet er klart; `getBlobStore()` kaster
+   eksplisitt for `BLOB_DRIVER=s3` til noen implementerer den.
+4. **Flere brukere** — se punkt 6.6.
+5. **Kostnadstak på ekstraksjon** — det finnes ingen grense i dag. En backfill
+   over fem år kan bli mange tusen LLM-kall. Bør det være et tak per døgn, eller
+   en bekreftelse før en stor backfill settes i gang?
